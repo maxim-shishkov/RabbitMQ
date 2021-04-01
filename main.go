@@ -5,38 +5,41 @@ import (
 	"log"
 	"time"
 )
-const URL = "amqp://guest:guest@localhost:5672/"
 
+const (
+	URL = "amqp://guest:guest@localhost:5672/"
+	TIMEFORMAT = "15:04:05"
+)
 
 	func main() {
-		RabbitMQ()
-	//	send("test Msg")
-	}
+		rst := make(chan struct{})
 
-	func failOnError(err error, msg string) {
-		if err != nil {
-			log.Printf("%s: %s", msg, err)
+		go workerRabbitMQ(rst)
+
+		for{
+			select {
+			case <-rst:
+				log.Println("Restarting Rabbit MQ")
+				time.Sleep(1 * time.Second)
+				go workerRabbitMQ(rst)
+			}
 		}
 	}
 
-	func RabbitMQ() {
-		defer func() {
-			if err := recover(); err != nil {
-				time.Sleep(1 * time.Second)
-				RabbitMQ()
-			}
-		}()
-
+	func workerRabbitMQ(rst chan struct{}) {
 		conn, err := amqp.Dial(URL)
-		failOnError(err, "Failed to connect to RabbitMQ")
+		if err != nil {
+			log.Printf("Failed to connect to RabbitMQ: %s", err)
+		}
 		defer conn.Close()
 
 		ch, err := conn.Channel()
-		failOnError(err, "Failed to open a channel")
+		if err != nil {
+			log.Printf("Failed to open a channel: %s", err)
+		}
 		defer ch.Close()
 
-		closeChan := make(chan *amqp.Error, 1)
-		notify := ch.NotifyClose(closeChan)
+		errorAmqp := ch.NotifyClose(make(chan *amqp.Error, 1))
 
 		q, err := ch.QueueDeclare(
 			"hello", // name
@@ -58,14 +61,14 @@ const URL = "amqp://guest:guest@localhost:5672/"
 
 		for {
 			select {
-				case e := <-notify:
+				case e := <- errorAmqp:
 					log.Printf("chan error: %s", e.Error())
-					close(closeChan)
-					RabbitMQ()
+					rst <- struct{}{}
 				case m := <-msgs:
 					log.Printf("Received a message: %s", m.Body)
 			}
 		}
+
 	}
 
 

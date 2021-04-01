@@ -1,25 +1,24 @@
 package main
 
 import (
+	"fmt"
 	"github.com/streadway/amqp"
 	"log"
 	"time"
 )
 
-func failOnErrorSend(err error, msg string) {
-	if err != nil {
-		log.Fatalf("%s: %s", msg, err)
-	}
-}
-
 func send(str string) {
 
-		conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
-		failOnErrorSend(err, "Failed to connect to RabbitMQ")
+		conn, err := amqp.Dial(URL)
+		if err != nil {
+			log.Printf("Failed to connect to RabbitMQ: %s", err)
+		}
 		defer conn.Close()
 
 		ch, err := conn.Channel()
-		failOnErrorSend(err, "Failed to open a channel")
+		if err != nil {
+			log.Printf("Failed to open a channel: %s", err)
+		}
 		defer ch.Close()
 
 		q, err := ch.QueueDeclare(
@@ -30,9 +29,11 @@ func send(str string) {
 			false,   // no-wait
 			nil,     // arguments
 		)
-		failOnErrorSend(err, "Failed to declare a queue")
+		if err != nil {
+			log.Printf("Failed to declare a queue: %s",  err)
+		}
 
-		body :=  time.Now().Format("15:04:05") + ": " + str
+		body :=  fmt.Sprint( time.Now().Format(TIMEFORMAT), ": ", str )
 		err = ch.Publish(
 			"",     // exchange
 			q.Name, // routing key
@@ -42,7 +43,10 @@ func send(str string) {
 				ContentType: "text/plain",
 				Body:        []byte(body),
 			})
-		failOnErrorSend(err, "Failed to publish a message")
-		log.Printf(" [x] Sent %s", body)
 
+		if err != nil {
+			log.Printf("Failed to publish a message: %s",  err)
+		}
+
+		log.Printf(" [x] Sent %s", body)
 }
